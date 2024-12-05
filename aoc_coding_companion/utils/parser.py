@@ -61,9 +61,10 @@ class CalendarResults(BaseModel):
     not_released: List[str]
 
     def __str__(self) -> str:
+        released = str(self.released).replace('\n', '\n\t')
         return (
             f"Анализ календаря(\n"
-            f"  Выпущенные задачи:\n\t{str(self.released).replace('\n', '\n\t')}\n"
+            f"  Выпущенные задачи:\n\t{released}\n"
             f"  Не выпущенные задачи: {len(self.not_released)} задач\n)"
         )
 

@@ -2,7 +2,7 @@ import os
 from logging import Logger
 from functools import lru_cache
 
-from telegram import Bot
+import telepot
 from langchain_openai import ChatOpenAI
 from langchain_core.runnables.config import RunnableConfig
 from langchain_gigachat.chat_models.gigachat import GigaChat
@@ -44,8 +44,8 @@ def get_model_by_name(model_name: str) -> BaseChatModel:
 
 
 def send_telegram_message(token: str, chat_id: str, message: str) -> None:
-    bot = Bot(token=token)
-    bot.send_message(chat_id=chat_id, text=message)
+    bot = telepot.Bot(token)
+    bot.sendMessage(chat_id, message)
 
 
 def send_telegram_message_by_config(message: str, config: RunnableConfig) -> None:
@@ -60,16 +60,14 @@ def send_telegram_message_by_config(message: str, config: RunnableConfig) -> Non
         logger.error(f'Ошибка отправки сообщения в телеграм: {e}')
 
 
-@lru_cache(maxsize=4)
 def get_model_by_config(config: RunnableConfig) -> BaseChatModel:
     return get_model_by_name(config['configurable'].get('model', 'openai-omni'))
 
-@lru_cache(maxsize=4)
+
 def get_leaderboard_id_by_config(config: RunnableConfig) -> BaseChatModel:
     return get_model_by_name(config['configurable'].get('leaderboard_id', os.environ['AOC_LEADERBOARD_ID']))
 
 
-@lru_cache(maxsize=4)
 def get_logger_by_config(config: RunnableConfig) -> Logger:
     logger = config['configurable'].get('logger')
     if logger is None:
@@ -77,9 +75,8 @@ def get_logger_by_config(config: RunnableConfig) -> Logger:
     return logger
 
 
-@lru_cache(maxsize=4)
 def get_parser_by_config(config: RunnableConfig) -> AdventOfCodeParser:
-    session_token = config['configurable']['session_token']
+    session_token = config['configurable'].get('session_token', os.environ['AOC_SESSION_TOKEN'])
     config = ParserConfig(
         headers={
             'User-Agent': os.environ.get('AOC_USER_AGENT', 'Mozilla/5.0 (Windows NT 10.0) Gecko/20100101 Firefox/92.0'),

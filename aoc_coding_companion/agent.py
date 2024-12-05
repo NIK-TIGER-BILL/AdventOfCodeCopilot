@@ -1,3 +1,5 @@
+import asyncio
+
 from psycopg_pool import AsyncConnectionPool
 from langgraph.graph import END, START, StateGraph
 from langgraph.checkpoint.memory import MemorySaver
@@ -50,7 +52,8 @@ def make_graph(checkpointer: BaseCheckpointSaver = None) -> CompiledStateGraph:
         }
     )
     base_builder.add_edge(check_leader_board.__name__, END)
-    base_builder.add_edge(get_puzzle.__name__, write_code.__name__)
+    base_builder.add_edge(get_puzzle.__name__, download_input.__name__)
+    base_builder.add_edge(download_input.__name__, write_code.__name__)
     base_builder.add_conditional_edges(
         write_code.__name__,
         route_exec_code,
@@ -89,4 +92,4 @@ async def make_graph_memory() -> CompiledStateGraph:
     return make_graph(checkpointer)
 
 if __name__ == '__main__':
-    make_graph_memory()
+    asyncio.run(make_graph_memory())

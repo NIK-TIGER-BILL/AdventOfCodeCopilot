@@ -2,11 +2,11 @@ from pathlib import Path
 
 from langchain_core.runnables.config import RunnableConfig
 from langchain_core.messages import ToolMessage, HumanMessage
-from langchain_experimental.utilities import PythonREPL
 
 from aoc_coding_companion.utils.state import AOCState
-from aoc_coding_companion.utils.models import Python_REPL
+from aoc_coding_companion.utils.tools import run_python_code
 from aoc_coding_companion.utils.prompts import developer_prompt
+from aoc_coding_companion.utils.models import PythonREPL, TaskAnswer
 from aoc_coding_companion.utils.utils import (
     get_model_by_config,
     get_logger_by_config,
@@ -61,13 +61,18 @@ def get_puzzle(state: AOCState, config: RunnableConfig):
     logger.debug('Вход узла распознавания задачи и условий')
     parser = get_parser_by_config(config)
     todo_puzzle_links = state['todo_puzzle_links']
-    todo_puzzle_link = todo_puzzle_links.pop()
+    todo_puzzle_link = todo_puzzle_links.pop(0)
     current_puzzle_details = parser.parse_puzzle_details(todo_puzzle_link)
     comment = (
-        f'В работу взята: {current_puzzle_details}'
+        f'Взято в работу:\n{current_puzzle_details}'
     )
     send_telegram_message_by_config(comment, config)
-    return {'todo_puzzle_links': todo_puzzle_links, 'current_puzzle_details': current_puzzle_details, 'comment': comment}
+    return {
+        'todo_puzzle_links': todo_puzzle_links,
+        'current_puzzle_details': current_puzzle_details,
+        'comment': comment,
+        'messages': []
+    }
 
 
 get_puzzle.__name__ = 'Взятие задачи 👀'
@@ -89,7 +94,7 @@ def download_input(state: AOCState, config: RunnableConfig):
     return {'input_filepath': input_filepath, 'comment': comment}
 
 
-get_puzzle.__name__ = 'Взятие задачи 👀'
+download_input.__name__ = 'Скачивание входных данных ⏳'
 
 
 GET_PUZZLE_ROUTE_NAME = 'Задачи для решения еще есть'
@@ -110,26 +115,30 @@ def write_code(state: AOCState, config: RunnableConfig):
     logger.debug('Вход узла программиста')
     llm = get_model_by_config(config)
 
-    tool_choice = None
-    if len(state["messages"]) == 0:
-        tool_choice = Python_REPL.__name__
-    chain = developer_prompt | llm.bind_tools([Python_REPL], tool_choice=tool_choice)
+    messages = state.get('messages', [])
+    if len(messages) == 0:
+        tool_choice = PythonREPL.__name__
+    else:
+        tool_choice = True
+    chain = developer_prompt | llm.bind_tools([PythonREPL, TaskAnswer], tool_choice=tool_choice)
 
     result = chain.invoke(
         {
             'input_filepath': state['input_filepath'],
             'task_description': state['current_puzzle_details'].description,
             'question': state['current_puzzle_details'].question,
-            'messages': state['messages']
+            'messages': messages
         }
     )
-    state['messages'].append(result)
+    messages.append(result)
 
-    if len(result.tool_calls) > 0:
-        comment = f'Написан код:\n{result.tool_calls[0]['args']['query']}'
+    if result.tool_calls[0]['name'] == PythonREPL.__name__:
+        code = result.tool_calls[0]['args']['query']
+        comment = f'Написан код:\n```python\n{code}\n```'
     else:
-        comment = f'Дан финальный ответ на задачу: {result.content}'
-    return {'messages': state['messages'], 'comment': comment}
+        answer = result.tool_calls[0]['args']['answer']
+        comment = f'Дан финальный ответ на задачу: {answer}'
+    return {'messages': messages, 'comment': comment}
 
 
 write_code.__name__ = 'Программист 👨🏻‍💻'
@@ -142,11 +151,11 @@ def exec_code(state: AOCState, config: RunnableConfig):
     if len(tool_calls) != 1:
         raise ValueError(f'Вызовов инструмента более 1.\n{tool_calls}')
     tool_call = tool_calls[0]
-    if tool_call['name'] != Python_REPL.__name__:
-        raise ValueError(f'Вызывают не инструмент по исполнению кода {Python_REPL.__name__}.\n{tool_call}')
-    code_output = PythonREPL().run(command=tool_call['args']['query'])
+    if tool_call['name'] != PythonREPL.__name__:
+        raise ValueError(f'Вызывают не инструмент по исполнению кода {PythonREPL.__name__}.\n{tool_call}')
+    code_output = run_python_code(code=tool_call['args']['query']).strip(' \n')
     state['messages'].append(ToolMessage(content=code_output, tool_call_id=tool_call['id']))
-    comment = f'Результат выполнения кода: {code_output}'
+    comment = f'Результат выполнения кода: "{code_output}"'
     send_telegram_message_by_config(comment, config)
     return {"messages": state['messages'], 'comment': comment}
 
@@ -161,12 +170,8 @@ FIND_ANSWER_ROUTE_NAME = 'Получен финальный ответ'
 def route_exec_code(state: AOCState, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход выбора следующего узла по запуску кода')
-    messages = state.get("messages", [])
-    if len(messages) > 0:
-        last_message = messages[-1]
-    else:
-        raise ValueError(f"Нет сообщений в состоянии графа: {state}")
-    if hasattr(last_message, "tool_calls") and len(last_message.tool_calls) > 0:
+    tool_calls = state["messages"][-1].tool_calls
+    if len(tool_calls) == 1 and tool_calls[0]['name'] == PythonREPL.__name__:
         return EXEC_CODE_ROUTE_NAME
     return FIND_ANSWER_ROUTE_NAME
 
@@ -176,13 +181,13 @@ def answer_submit(state: AOCState, config: RunnableConfig):
     logger.debug('Вход узла отправки ответа')
     parser = get_parser_by_config(config)
 
-    answer = state['messages'][-1].content
+    answer = state["messages"][-1].tool_calls[0]['args']['answer'].strip(' \n')
     result = parser.submit_answer(state['current_puzzle_details'].submit_url, state['current_puzzle_details'].level, answer)
 
     if result.is_correct:
-        comment = f'Ответ "{result}" верный! '
+        comment = f'Ответ "{answer}" верный! '
     else:
-        comment = f'Ответ "{result}" неверный!'
+        comment = f'Ответ "{answer}" неверный!\n{result.full_text}'
         state['messages'].append(
             HumanMessage('Ответ неверный. Где-то есть ошибка, еще раз прочитай условие и перепиши код')
         )
@@ -201,6 +206,6 @@ def route_answer_correctness(state: AOCState, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход выбора следующего узла по правильности ответа')
 
-    if isinstance(HumanMessage, state['messages'][-1]):
+    if isinstance(state['messages'][-1], HumanMessage):
         return RETRY_ROUTE_NAME
     return ' | '.join([ANSWER_CORRECTNESS_ROUTE_NAME, route_have_puzzles(state, config)])
