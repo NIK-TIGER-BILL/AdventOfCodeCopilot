@@ -68,7 +68,7 @@ def make_graph(checkpointer: BaseCheckpointSaver = None) -> CompiledStateGraph:
         route_answer_correctness,
         {
             RETRY_ROUTE_NAME: write_code.__name__,
-            ' | '.join([ANSWER_CORRECTNESS_ROUTE_NAME, ALL_DONE_ROUTE_NAME]): check_leader_board.__name__,
+            ' | '.join([ANSWER_CORRECTNESS_ROUTE_NAME, ALL_DONE_ROUTE_NAME]): search_unsolved_puzzles.__name__,
             ' | '.join([ANSWER_CORRECTNESS_ROUTE_NAME, GET_PUZZLE_ROUTE_NAME]): get_puzzle.__name__
         }
     )

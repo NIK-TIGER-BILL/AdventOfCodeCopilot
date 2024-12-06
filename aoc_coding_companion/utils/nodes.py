@@ -26,7 +26,7 @@ def check_leader_board(_, config: RunnableConfig):
         logger.debug(f'Результат проверки лидерборда: {leaderboard_result}')
         comment = (
             f'<ПРОВЕРКА ЛИДЕРБОРДА>: '
-            f'Твое место - {leaderboard_result.my_position} с очками - {leaderboard_result.my_score}'
+            f'Твое место - {leaderboard_result.my_position} с очками - {leaderboard_result.my_points}'
         )
     except Exception as e:
         comment = f'Не удалось получить результат проверки лидерборда: {e}'
@@ -49,7 +49,7 @@ def search_unsolved_puzzles(_, config: RunnableConfig):
         f'и частично не решенных задач {len(calendar.released.partially_solved)}'
     )
     send_telegram_message_by_config(comment, config)
-    todo_puzzle_links = list(calendar.released.unsolved.values()) + list(calendar.released.partially_solved.values())
+    todo_puzzle_links = list(calendar.released.partially_solved.values()) + list(calendar.released.unsolved.values())
     return {'todo_puzzle_links': todo_puzzle_links, 'comment': comment}
 
 
@@ -181,16 +181,28 @@ def answer_submit(state: AOCState, config: RunnableConfig):
     logger.debug('Вход узла отправки ответа')
     parser = get_parser_by_config(config)
 
-    answer = state["messages"][-1].tool_calls[0]['args']['answer'].strip(' \n')
-    result = parser.submit_answer(state['current_puzzle_details'].submit_url, state['current_puzzle_details'].level, answer)
+    tool_call = state["messages"][-1].tool_calls[0]
+    answer = tool_call['args']['answer'].strip(' \n')
+
+    print(state['current_puzzle_details'])
+
+    result = parser.submit_answer(
+        state['current_puzzle_details'].submit_url,
+        state['current_puzzle_details'].level,
+        answer
+    )
 
     if result.is_correct:
-        comment = f'Ответ "{answer}" верный! '
-    else:
-        comment = f'Ответ "{answer}" неверный!\n{result.full_text}'
-        state['messages'].append(
-            HumanMessage('Ответ неверный. Где-то есть ошибка, еще раз прочитай условие и перепиши код')
+        comment = f'Ответ "{answer}" верный!\n{result.full_text}'
+        send_telegram_message_by_config(comment, config)
+        return {'comment': comment}
+    comment = f'Ответ "{answer}" неверный!\n{result.full_text}'
+    state['messages'].append(
+        ToolMessage(
+            content='Ответ неверный. Где-то есть ошибка, еще раз прочитай условие и перепиши код',
+            tool_call_id=tool_call['id']
         )
+    )
     send_telegram_message_by_config(comment, config)
     return {'messages': state['messages'], 'comment': comment}
 
@@ -206,6 +218,6 @@ def route_answer_correctness(state: AOCState, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход выбора следующего узла по правильности ответа')
 
-    if isinstance(state['messages'][-1], HumanMessage):
+    if isinstance(state['messages'][-1], ToolMessage):
         return RETRY_ROUTE_NAME
     return ' | '.join([ANSWER_CORRECTNESS_ROUTE_NAME, route_have_puzzles(state, config)])

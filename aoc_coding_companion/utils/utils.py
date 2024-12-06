@@ -65,7 +65,7 @@ def get_model_by_config(config: RunnableConfig) -> BaseChatModel:
 
 
 def get_leaderboard_id_by_config(config: RunnableConfig) -> BaseChatModel:
-    return get_model_by_name(config['configurable'].get('leaderboard_id', os.environ['AOC_LEADERBOARD_ID']))
+    return config['configurable'].get('leaderboard_id', os.environ['AOC_LEADERBOARD_ID'])
 
 
 def get_logger_by_config(config: RunnableConfig) -> Logger:
