@@ -1,7 +1,7 @@
 from pathlib import Path
 
+from langchain_core.messages import ToolMessage
 from langchain_core.runnables.config import RunnableConfig
-from langchain_core.messages import ToolMessage, HumanMessage
 
 from aoc_coding_companion.utils.state import AOCState
 from aoc_coding_companion.utils.tools import run_python_code
@@ -16,13 +16,13 @@ from aoc_coding_companion.utils.utils import (
 )
 
 
-def check_leader_board(_, config: RunnableConfig):
+async def check_leader_board(_, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход узла проверки лидерборда')
-    parser = get_parser_by_config(config)
     leaderboard_id = get_leaderboard_id_by_config(config)
     try:
-        leaderboard_result = parser.parse_leaderboard(leaderboard_id)
+        async with get_parser_by_config(config) as parser:
+            leaderboard_result = await parser.parse_leaderboard(leaderboard_id)
         logger.debug(f'Результат проверки лидерборда: {leaderboard_result}')
         comment = (
             f'<ПРОВЕРКА ЛИДЕРБОРДА>: '
@@ -34,15 +34,14 @@ def check_leader_board(_, config: RunnableConfig):
 
     return {'comment': comment}
 
-
 check_leader_board.__name__ = 'Проверка списка лидеров 📊'
 
 
-def search_unsolved_puzzles(_, config: RunnableConfig):
+async def search_unsolved_puzzles(_, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход узла поиска нерешенных задач')
-    parser = get_parser_by_config(config)
-    calendar = parser.parse_calendar()
+    async with get_parser_by_config(config) as parser:
+        calendar = await parser.parse_calendar()
     logger.debug(calendar)
     comment = (
         f'Количество нерешенных задач: {len(calendar.released.unsolved)} '
@@ -52,17 +51,16 @@ def search_unsolved_puzzles(_, config: RunnableConfig):
     todo_puzzle_links = list(calendar.released.partially_solved.values()) + list(calendar.released.unsolved.values())
     return {'todo_puzzle_links': todo_puzzle_links, 'comment': comment}
 
-
 search_unsolved_puzzles.__name__ = 'Поиск нерешенных задач 🔎'
 
 
-def get_puzzle(state: AOCState, config: RunnableConfig):
+async def get_puzzle(state: AOCState, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход узла распознавания задачи и условий')
-    parser = get_parser_by_config(config)
     todo_puzzle_links = state['todo_puzzle_links']
     todo_puzzle_link = todo_puzzle_links.pop(0)
-    current_puzzle_details = parser.parse_puzzle_details(todo_puzzle_link)
+    async with get_parser_by_config(config) as parser:
+        current_puzzle_details = await parser.parse_puzzle_details(todo_puzzle_link)
     comment = (
         f'Взято в работу:\n{current_puzzle_details}'
     )
@@ -74,25 +72,23 @@ def get_puzzle(state: AOCState, config: RunnableConfig):
         'messages': []
     }
 
-
 get_puzzle.__name__ = 'Взятие задачи 👀'
 
 
-def download_input(state: AOCState, config: RunnableConfig):
+async def download_input(state: AOCState, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход скачивания файла с входными данными')
-    parser = get_parser_by_config(config)
     working_dir = Path(config['configurable'].get('working_dir', './tmp_work_dir')).resolve()
     working_dir.mkdir(parents=True, exist_ok=True)
     current_puzzle_details = state['current_puzzle_details']
     input_filepath = working_dir / f'INPUT({current_puzzle_details.name}).txt'
-    parser.download_input(current_puzzle_details.input_link, input_filepath)
+    async with get_parser_by_config(config) as parser:
+        await parser.download_input(current_puzzle_details.input_link, input_filepath)
     comment = (
         f'Скачены входные данные в файл {input_filepath}'
     )
     send_telegram_message_by_config(comment, config)
     return {'input_filepath': input_filepath, 'comment': comment}
-
 
 download_input.__name__ = 'Скачивание входных данных ⏳'
 
@@ -101,7 +97,7 @@ GET_PUZZLE_ROUTE_NAME = 'Задачи для решения еще есть'
 ALL_DONE_ROUTE_NAME = 'Все задачи из TODO листа выполнены'
 
 
-def route_have_puzzles(state: AOCState, config: RunnableConfig):
+async def route_have_puzzles(state: AOCState, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход выбора следующего узла по парсингу задачи')
     todo_puzzle_links = state.get("todo_puzzle_links", [])
@@ -110,7 +106,7 @@ def route_have_puzzles(state: AOCState, config: RunnableConfig):
     return ALL_DONE_ROUTE_NAME
 
 
-def write_code(state: AOCState, config: RunnableConfig):
+async def write_code(state: AOCState, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход узла программиста')
     llm = get_model_by_config(config)
@@ -122,7 +118,7 @@ def write_code(state: AOCState, config: RunnableConfig):
         tool_choice = True
     chain = developer_prompt | llm.bind_tools([PythonREPL, TaskAnswer], tool_choice=tool_choice)
 
-    result = chain.invoke(
+    result = await chain.ainvoke(
         {
             'input_filepath': state['input_filepath'],
             'task_description': state['current_puzzle_details'].description,
@@ -144,7 +140,7 @@ def write_code(state: AOCState, config: RunnableConfig):
 write_code.__name__ = 'Программист 👨🏻‍💻'
 
 
-def exec_code(state: AOCState, config: RunnableConfig):
+async def exec_code(state: AOCState, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход узла запуска кода')
     tool_calls = state["messages"][-1].tool_calls
@@ -167,7 +163,7 @@ EXEC_CODE_ROUTE_NAME = 'Требуется запуск кода'
 FIND_ANSWER_ROUTE_NAME = 'Получен финальный ответ'
 
 
-def route_exec_code(state: AOCState, config: RunnableConfig):
+async def route_exec_code(state: AOCState, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход выбора следующего узла по запуску кода')
     tool_calls = state["messages"][-1].tool_calls
@@ -176,21 +172,21 @@ def route_exec_code(state: AOCState, config: RunnableConfig):
     return FIND_ANSWER_ROUTE_NAME
 
 
-def answer_submit(state: AOCState, config: RunnableConfig):
+async def answer_submit(state: AOCState, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход узла отправки ответа')
-    parser = get_parser_by_config(config)
 
     tool_call = state["messages"][-1].tool_calls[0]
     answer = tool_call['args']['answer'].strip(' \n')
 
     print(state['current_puzzle_details'])
 
-    result = parser.submit_answer(
-        state['current_puzzle_details'].submit_url,
-        state['current_puzzle_details'].level,
-        answer
-    )
+    async with get_parser_by_config(config) as parser:
+        result = await parser.submit_answer(
+            state['current_puzzle_details'].submit_url,
+            state['current_puzzle_details'].level,
+            answer
+        )
 
     if result.is_correct:
         comment = f'Ответ "{answer}" верный!\n{result.full_text}'
@@ -214,7 +210,7 @@ RETRY_ROUTE_NAME = 'Ответ неверный, пробуем еще'
 ANSWER_CORRECTNESS_ROUTE_NAME = 'Ответ верный!'
 
 
-def route_answer_correctness(state: AOCState, config: RunnableConfig):
+async def route_answer_correctness(state: AOCState, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход выбора следующего узла по правильности ответа')
 
