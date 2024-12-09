@@ -18,7 +18,7 @@ def get_model_by_name(model_name: str) -> BaseChatModel:
         model = ChatOpenAI(
             temperature=1,
             request_timeout=90.0,
-            model=os.getenv('OPENAI_MODEL', 'gpt-4o')
+            model='gpt-4o'
         )
     elif model_name == 'giga-pro':
         model = GigaChat(
