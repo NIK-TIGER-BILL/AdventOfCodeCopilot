@@ -8,6 +8,7 @@ from aoc_coding_companion.utils.state import AOCState
 from aoc_coding_companion.utils.tools import run_python_code
 from aoc_coding_companion.utils.prompts import developer_prompt
 from aoc_coding_companion.utils.models import PythonREPL, TaskAnswer
+from aoc_coding_companion.utils.constants import DEFAULT_ATTEMPT_COUNT
 from aoc_coding_companion.utils.utils import (
     get_model_by_config,
     get_logger_by_config,
@@ -25,7 +26,7 @@ async def start_alert(_, config: RunnableConfig):
 
     return {'comment': comment}
 
-start_alert.__name__ = 'Оповещение о старте работы 🚀'
+start_alert.__name__ = 'Оповещение о старте работы 👋'
 
 
 async def check_leader_board(_, config: RunnableConfig):
@@ -81,7 +82,8 @@ async def get_puzzle(state: AOCState, config: RunnableConfig):
         'todo_puzzle_links': todo_puzzle_links,
         'current_puzzle_details': current_puzzle_details,
         'comment': comment,
-        'messages': []
+        'messages': [],
+        'attempt_number': 0
     }
 
 get_puzzle.__name__ = 'Взятие задачи 👀'
@@ -206,7 +208,7 @@ async def answer_submit(state: AOCState, config: RunnableConfig):
                 tool_call_id=all_tool_call_answer[-1]['id']
             )
         )
-        return {'messages': state['messages'], 'comment': comment}
+        return {'messages': state['messages'], 'comment': comment, 'attempt_number': state['attempt_number'] + 1}
 
     # Отправка ответа
     async with get_parser_by_config(config) as parser:
@@ -232,13 +234,14 @@ async def answer_submit(state: AOCState, config: RunnableConfig):
         )
     )
     send_telegram_message_by_config(comment, config)
-    return {'messages': state['messages'], 'comment': comment}
+    return {'messages': state['messages'], 'comment': comment, 'attempt_number': state['attempt_number'] + 1}
 
 
 answer_submit.__name__ = 'Отправка ответа 💌'
 
 
 RETRY_ROUTE_NAME = 'Ответ неверный, пробуем еще'
+MAX_ATTEMPT_NAME = f'Достигнуто максимальное количество попыток ({DEFAULT_ATTEMPT_COUNT})'
 ANSWER_CORRECTNESS_ROUTE_NAME = 'Ответ верный!'
 
 
@@ -248,6 +251,8 @@ async def route_answer_correctness(state: AOCState, config: RunnableConfig):
 
     if isinstance(state['messages'][-1], ToolMessage):
         return RETRY_ROUTE_NAME
+    if state['attempt_number'] >= DEFAULT_ATTEMPT_COUNT:
+        return ' | '.join([MAX_ATTEMPT_NAME, route_have_puzzles(state, config)])
     return ' | '.join([ANSWER_CORRECTNESS_ROUTE_NAME, route_have_puzzles(state, config)])
 
 
