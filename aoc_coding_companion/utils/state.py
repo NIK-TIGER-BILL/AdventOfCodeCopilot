@@ -11,4 +11,3 @@ class AOCState(TypedDict):
     current_puzzle_details: PuzzleDetail
     input_filepath: str
     comment: str
-    attempt_number: int

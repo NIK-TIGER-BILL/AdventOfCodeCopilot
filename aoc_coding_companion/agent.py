@@ -22,13 +22,20 @@ from aoc_coding_companion.utils.nodes import (
     route_exec_code,
     answer_submit,
     route_answer_correctness,
+    check_rules_retry,
+    route_check_rules_retry,
+    check_pull_backlog,
+    route_check_pull_backlog,
     FIND_ANSWER_ROUTE_NAME,
     ALL_DONE_ROUTE_NAME,
     RETRY_ROUTE_NAME,
     EXEC_CODE_ROUTE_NAME,
     ANSWER_CORRECTNESS_ROUTE_NAME,
     GET_PUZZLE_ROUTE_NAME,
-    MAX_ATTEMPT_NAME
+    MAX_ATTEMPT_NAME,
+    RULES_PASSED_NAME,
+    HAVE_TASKS_NAME,
+    EMPTY_BACKLOG_NAME
 )
 
 
@@ -46,6 +53,8 @@ def make_graph(checkpointer: BaseCheckpointSaver = None) -> CompiledStateGraph:
     base_builder.add_node(write_code.__name__, write_code)
     base_builder.add_node(exec_code.__name__, exec_code)
     base_builder.add_node(answer_submit.__name__, answer_submit)
+    base_builder.add_node(check_rules_retry.__name__, check_rules_retry)
+    base_builder.add_node(check_pull_backlog.__name__, check_pull_backlog)
 
     base_builder.add_edge(START, start_alert.__name__)
     base_builder.add_edge(start_alert.__name__, search_unsolved_puzzles.__name__)
@@ -74,11 +83,24 @@ def make_graph(checkpointer: BaseCheckpointSaver = None) -> CompiledStateGraph:
         answer_submit.__name__,
         route_answer_correctness,
         {
-            RETRY_ROUTE_NAME: write_code.__name__,
-            ' | '.join([ANSWER_CORRECTNESS_ROUTE_NAME, ALL_DONE_ROUTE_NAME]): search_unsolved_puzzles.__name__,
-            ' | '.join([ANSWER_CORRECTNESS_ROUTE_NAME, GET_PUZZLE_ROUTE_NAME]): get_puzzle.__name__,
-            ' | '.join([MAX_ATTEMPT_NAME, ALL_DONE_ROUTE_NAME]): search_unsolved_puzzles.__name__,
-            ' | '.join([MAX_ATTEMPT_NAME, GET_PUZZLE_ROUTE_NAME]): get_puzzle.__name__,
+            RETRY_ROUTE_NAME: check_rules_retry.__name__,
+            ANSWER_CORRECTNESS_ROUTE_NAME: check_pull_backlog.__name__
+        }
+    )
+    base_builder.add_conditional_edges(
+        check_rules_retry.__name__,
+        route_check_rules_retry,
+        {
+            MAX_ATTEMPT_NAME: check_pull_backlog.__name__,
+            RULES_PASSED_NAME: write_code.__name__
+        }
+    )
+    base_builder.add_conditional_edges(
+        check_pull_backlog.__name__,
+        route_check_pull_backlog,
+        {
+            HAVE_TASKS_NAME: get_puzzle.__name__,
+            EMPTY_BACKLOG_NAME: search_unsolved_puzzles.__name__
         }
     )
 

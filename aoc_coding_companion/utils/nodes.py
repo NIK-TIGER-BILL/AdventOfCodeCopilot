@@ -96,7 +96,6 @@ async def get_puzzle(state: AOCState, config: RunnableConfig):
         'current_puzzle_details': current_puzzle_details,
         'comment': comment,
         'messages': [],
-        'attempt_number': 0
     }
 
 get_puzzle.__name__ = 'Взятие задачи 👀'
@@ -210,7 +209,7 @@ async def answer_submit(state: AOCState, config: RunnableConfig):
                 tool_call_id=all_tool_call_answer[-1]['id']
             )
         )
-        return {'messages': state['messages'], 'comment': comment, 'attempt_number': state['attempt_number'] + 1}
+        return {'messages': state['messages'], 'comment': comment}
 
     # Отправка ответа
     async with get_parser_by_config(config) as parser:
@@ -237,14 +236,60 @@ async def answer_submit(state: AOCState, config: RunnableConfig):
         )
     )
     send_telegram_message_by_config(comment, config)
-    return {'messages': state['messages'], 'comment': comment, 'attempt_number': state['attempt_number'] + 1}
+    return {'messages': state['messages'], 'comment': comment}
 
 
 answer_submit.__name__ = 'Отправка ответа 💌'
 
 
-RETRY_ROUTE_NAME = 'Ответ неверный, пробуем еще'
+async def check_rules_retry(_, config: RunnableConfig):
+    # Заглушка для красоты графиков
+    logger = get_logger_by_config(config)
+    logger.debug('Вход узла проверки правил перезапуска')
+    return {'comment': 'Все проверки выполнены'}
+
+check_rules_retry.__name__ = 'Проверка правил перезапуска 🧐'
+
 MAX_ATTEMPT_NAME = f'Достигнуто максимальное количество попыток ({DEFAULT_ATTEMPT_COUNT})'
+RULES_PASSED_NAME = 'Все проверки пройдены'
+
+
+async def route_check_rules_retry(state: AOCState, config: RunnableConfig):
+    logger = get_logger_by_config(config)
+    logger.debug('Вход выбора следующего узла по проверки правил перезапуска')
+
+    all_tool_call_answer = [message.tool_calls[0] for message in state['messages']
+                            if hasattr(message, 'tool_calls') and
+                            len(message.tool_calls) == 1 and
+                            message.tool_calls[0]['name'] == TaskAnswer.__name__]
+    if len(all_tool_call_answer) >= DEFAULT_ATTEMPT_COUNT:
+        return MAX_ATTEMPT_NAME
+    return RULES_PASSED_NAME
+
+
+async def check_pull_backlog(_, config: RunnableConfig):
+    # Заглушка для красоты графиков
+    logger = get_logger_by_config(config)
+    logger.debug('Вход узла проверки пула задач')
+    return {'comment': 'Пул просмотрен'}
+
+
+check_pull_backlog.__name__ = 'Просмотр пула задач 📚'
+
+HAVE_TASKS_NAME = f'Есть задачи для работы'
+EMPTY_BACKLOG_NAME = 'Все задачи из пула выполнены'
+
+
+async def route_check_pull_backlog(state: AOCState, config: RunnableConfig):
+    logger = get_logger_by_config(config)
+    logger.debug('Вход выбора следующего узла по проверки пула задач')
+
+    if len(state.get("todo_puzzle_links", [])) > 0:
+        return HAVE_TASKS_NAME
+    return EMPTY_BACKLOG_NAME
+
+
+RETRY_ROUTE_NAME = 'Ответ неверный, пробуем еще'
 ANSWER_CORRECTNESS_ROUTE_NAME = 'Ответ верный!'
 
 
@@ -254,9 +299,7 @@ async def route_answer_correctness(state: AOCState, config: RunnableConfig):
 
     if isinstance(state['messages'][-1], ToolMessage):
         return RETRY_ROUTE_NAME
-    if state['attempt_number'] >= DEFAULT_ATTEMPT_COUNT:
-        return ' | '.join([MAX_ATTEMPT_NAME, route_have_puzzles(state, config)])
-    return ' | '.join([ANSWER_CORRECTNESS_ROUTE_NAME, route_have_puzzles(state, config)])
+    return ANSWER_CORRECTNESS_ROUTE_NAME
 
 
 async def end_alert(_, config: RunnableConfig):
