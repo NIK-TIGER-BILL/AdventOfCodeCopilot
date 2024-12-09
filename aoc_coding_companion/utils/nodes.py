@@ -5,10 +5,10 @@ from langchain_core.messages import ToolMessage
 from langchain_core.runnables.config import RunnableConfig
 
 from aoc_coding_companion.utils.state import AOCState
-from aoc_coding_companion.utils.tools import run_python_code
 from aoc_coding_companion.utils.prompts import developer_prompt
 from aoc_coding_companion.utils.models import PythonREPL, TaskAnswer
-from aoc_coding_companion.utils.constants import DEFAULT_ATTEMPT_COUNT
+from aoc_coding_companion.utils.tools import run_python_code_with_timeout
+from aoc_coding_companion.utils.constants import DEFAULT_ATTEMPT_COUNT, DEFAULT_TIMEOUT_EXEC_CODE
 from aoc_coding_companion.utils.utils import (
     get_model_by_config,
     get_logger_by_config,
@@ -162,9 +162,20 @@ async def exec_code(state: AOCState, config: RunnableConfig):
     tool_call = tool_calls[0]
     if tool_call['name'] != PythonREPL.__name__:
         raise ValueError(f'Вызывают не инструмент по исполнению кода {PythonREPL.__name__}.\n{tool_call}')
-    code_output = run_python_code(code=tool_call['args']['query']).strip(' \n')
-    state['messages'].append(ToolMessage(content=code_output, tool_call_id=tool_call['id']))
-    comment = f'Результат выполнения кода: "{code_output}"'
+    try:
+        code_output = run_python_code_with_timeout(tool_call['args']['query'], DEFAULT_TIMEOUT_EXEC_CODE).strip(' \n')
+    except TimeoutError:
+        comment = f'Превышено время ожидания {DEFAULT_TIMEOUT_EXEC_CODE} секунд'
+        state['messages'].append(
+            ToolMessage(
+                content='The code works for more than 2 minutes. '
+                        'Check, maybe you made a mistake and there is an infinite loop',
+                tool_call_id=tool_call['id']
+            )
+        )
+    else:
+        state['messages'].append(ToolMessage(content=code_output, tool_call_id=tool_call['id']))
+        comment = f'Результат выполнения кода: "{code_output}"'
     send_telegram_message_by_config(comment, config)
     return {"messages": state['messages'], 'comment': comment}
 
