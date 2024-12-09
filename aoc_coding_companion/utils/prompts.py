@@ -11,6 +11,7 @@ developer_prompt = ChatPromptTemplate(
             'Then write detailed pseudocode to uncover any potential logical errors or omissions.\n'
             'Finally output the working Python code for your solution, ensuring to fix any errors uncovered while writing pseudocode.\n'
             'Your code must print the answer using print(). There MUST be only one print. Typically, it outputs 1 number\n'
+            'When you write the solution, be sure to use the input data. DO NOT OUTPUT them, they are very large\n'
             'No outside libraries are allowed'
         ),
         (
@@ -21,6 +22,7 @@ developer_prompt = ChatPromptTemplate(
             '</task_description>\n\n'
             'The input file is located at: "{input_filepath}" use it.\n\n'
             'Answer the question: {question}\n\n'
+            'Write the code in full at once'
         ),
         (
             'placeholder',

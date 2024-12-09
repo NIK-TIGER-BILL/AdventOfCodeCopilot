@@ -188,8 +188,9 @@ async def answer_submit(state: AOCState, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход узла отправки ответа')
 
-    all_tool_call_answer = [message.tool_calls[0]['args']['answer'].strip(' \n')
-                            for message in state['messages'] if len(message.tool_calls) == 1 and
+    all_tool_call_answer = [message.tool_calls[0] for message in state['messages']
+                            if hasattr(message, 'tool_calls') and
+                            len(message.tool_calls) == 1 and
                             message.tool_calls[0]['name'] == TaskAnswer.__name__]
     answers = [tool_call['args']['answer'].strip(' \n') for tool_call in all_tool_call_answer]
     submit_answer = answers.pop(-1)
@@ -199,7 +200,9 @@ async def answer_submit(state: AOCState, config: RunnableConfig):
         comment = f'Данный ответ уже ранее отвечался и был неверным'
         state['messages'].append(
             ToolMessage(
-                content=f'Ответ неправильный. Ты уже ранее отвечал "{submit_answer}". НЕ ПОВТОРЯЙСЯ',
+                content=f'The answer is incorrect. You have already answered "{submit_answer}" before. '
+                        f'DO NOT REPEAT IT. '
+                        f'Reread the terms carefully and try to find the mistake.',
                 tool_call_id=all_tool_call_answer[-1]['id']
             )
         )
@@ -223,7 +226,8 @@ async def answer_submit(state: AOCState, config: RunnableConfig):
     comment = f'Ответ "{submit_answer}" неверный!\n{result.full_text}'
     state['messages'].append(
         ToolMessage(
-            content='Ответ неверный. Где-то есть ошибка, еще раз прочитай условие и перепиши код',
+            content='The answer is incorrect. '
+                    'There is an error somewhere, read the condition again and rewrite the code',
             tool_call_id=all_tool_call_answer[-1]['id']
         )
     )
