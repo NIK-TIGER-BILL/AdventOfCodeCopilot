@@ -10,6 +10,8 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from aoc_coding_companion.utils.state import AOCState
 from aoc_coding_companion.utils.config_schema import ConfigSchema
 from aoc_coding_companion.utils.nodes import (
+    start_alert,
+    end_alert,
     check_leader_board,
     search_unsolved_puzzles,
     get_puzzle,
@@ -34,6 +36,8 @@ def make_graph(checkpointer: BaseCheckpointSaver = None) -> CompiledStateGraph:
 
     base_builder = StateGraph(AOCState, ConfigSchema)
 
+    base_builder.add_node(start_alert.__name__, start_alert)
+    base_builder.add_node(end_alert.__name__, end_alert)
     base_builder.add_node(check_leader_board.__name__, check_leader_board)
     base_builder.add_node(search_unsolved_puzzles.__name__, search_unsolved_puzzles)
     base_builder.add_node(get_puzzle.__name__, get_puzzle)
@@ -42,7 +46,8 @@ def make_graph(checkpointer: BaseCheckpointSaver = None) -> CompiledStateGraph:
     base_builder.add_node(exec_code.__name__, exec_code)
     base_builder.add_node(answer_submit.__name__, answer_submit)
 
-    base_builder.add_edge(START, search_unsolved_puzzles.__name__)
+    base_builder.add_edge(START, start_alert.__name__)
+    base_builder.add_edge(start_alert.__name__, search_unsolved_puzzles.__name__)
     base_builder.add_conditional_edges(
         search_unsolved_puzzles.__name__,
         route_have_puzzles,
@@ -51,7 +56,8 @@ def make_graph(checkpointer: BaseCheckpointSaver = None) -> CompiledStateGraph:
             GET_PUZZLE_ROUTE_NAME: get_puzzle.__name__
         }
     )
-    base_builder.add_edge(check_leader_board.__name__, END)
+    base_builder.add_edge(check_leader_board.__name__, end_alert.__name__)
+    base_builder.add_edge(end_alert.__name__, END)
     base_builder.add_edge(get_puzzle.__name__, download_input.__name__)
     base_builder.add_edge(download_input.__name__, write_code.__name__)
     base_builder.add_conditional_edges(

@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import datetime
 
 from langchain_core.messages import ToolMessage
 from langchain_core.runnables.config import RunnableConfig
@@ -14,6 +15,17 @@ from aoc_coding_companion.utils.utils import (
     get_leaderboard_id_by_config,
     send_telegram_message_by_config
 )
+
+
+async def start_alert(_, config: RunnableConfig):
+    logger = get_logger_by_config(config)
+    logger.debug('Вход узла оповещение о старте работы')
+    comment = f'Оооо привет! Ержан 🙈 проснулся и начал работу.\nВремя {datetime.now()}'
+    send_telegram_message_by_config(comment, config)
+
+    return {'comment': comment}
+
+start_alert.__name__ = 'Оповещение о старте работы 🚀'
 
 
 async def check_leader_board(_, config: RunnableConfig):
@@ -233,3 +245,14 @@ async def route_answer_correctness(state: AOCState, config: RunnableConfig):
     if isinstance(state['messages'][-1], ToolMessage):
         return RETRY_ROUTE_NAME
     return ' | '.join([ANSWER_CORRECTNESS_ROUTE_NAME, route_have_puzzles(state, config)])
+
+
+async def end_alert(_, config: RunnableConfig):
+    logger = get_logger_by_config(config)
+    logger.debug('Вход узла оповещение о завершении работы')
+    comment = f'Я закончить, начальника!\nВремя {datetime.now()}'
+    send_telegram_message_by_config(comment, config)
+
+    return {'comment': comment}
+
+end_alert.__name__ = 'Оповещение о конце работы 🏁'
