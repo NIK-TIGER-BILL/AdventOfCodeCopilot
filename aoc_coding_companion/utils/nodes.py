@@ -7,7 +7,7 @@ from langchain_core.runnables.config import RunnableConfig
 from aoc_coding_companion.utils.state import AOCState
 from aoc_coding_companion.utils.prompts import developer_prompt
 from aoc_coding_companion.utils.models import PythonREPL, TaskAnswer
-from aoc_coding_companion.utils.tools import run_python_code_with_timeout
+from aoc_coding_companion.utils.tools import run_python_code_with_timeout, ExecTimeoutException
 from aoc_coding_companion.utils.constants import DEFAULT_ATTEMPT_COUNT, DEFAULT_TIMEOUT_EXEC_CODE
 from aoc_coding_companion.utils.utils import (
     get_model_by_config,
@@ -23,7 +23,6 @@ async def start_alert(_, config: RunnableConfig):
     logger.debug('Вход узла оповещение о старте работы')
     comment = f'Оооо привет! Ержан 🙈 проснулся и начал работу.\nВремя {datetime.now()}'
     send_telegram_message_by_config(comment, config)
-
     return {'comment': comment}
 
 start_alert.__name__ = 'Оповещение о старте работы 👋'
@@ -33,8 +32,10 @@ async def check_leader_board(_, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход узла проверки лидерборда')
     leaderboard_id = get_leaderboard_id_by_config(config)
+    logger.debug(f'Получен id лидерборда {leaderboard_id}')
     try:
         async with get_parser_by_config(config) as parser:
+            logger.debug('Создан объект парсера')
             leaderboard_result = await parser.parse_leaderboard(leaderboard_id)
         logger.debug(f'Результат проверки лидерборда: {leaderboard_result}')
         comment = (
@@ -44,7 +45,6 @@ async def check_leader_board(_, config: RunnableConfig):
     except Exception as e:
         comment = f'Не удалось получить результат проверки лидерборда: {e}'
     send_telegram_message_by_config(comment, config)
-
     return {'comment': comment}
 
 check_leader_board.__name__ = 'Проверка списка лидеров 📊'
@@ -54,6 +54,7 @@ async def search_unsolved_puzzles(_, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход узла поиска нерешенных задач')
     async with get_parser_by_config(config) as parser:
+        logger.debug('Создан объект парсера')
         calendar = await parser.parse_calendar()
     logger.debug(calendar)
     comment = (
@@ -62,6 +63,7 @@ async def search_unsolved_puzzles(_, config: RunnableConfig):
     )
     send_telegram_message_by_config(comment, config)
     todo_puzzle_links = list(calendar.released.partially_solved.values()) + list(calendar.released.unsolved.values())
+    logger.debug(f'Задачи для обработки {todo_puzzle_links}')
     return {'todo_puzzle_links': todo_puzzle_links, 'comment': comment}
 
 search_unsolved_puzzles.__name__ = 'Поиск нерешенных задач 🔎'
@@ -75,6 +77,7 @@ async def route_have_puzzles(state: AOCState, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход выбора следующего узла по парсингу задачи')
     todo_puzzle_links = state.get("todo_puzzle_links", [])
+    logger.debug(f'Задачи для обработки {todo_puzzle_links}')
     if len(todo_puzzle_links) > 0:
         return GET_PUZZLE_ROUTE_NAME
     return ALL_DONE_ROUTE_NAME
@@ -85,11 +88,12 @@ async def get_puzzle(state: AOCState, config: RunnableConfig):
     logger.debug('Вход узла распознавания задачи и условий')
     todo_puzzle_links = state['todo_puzzle_links']
     todo_puzzle_link = todo_puzzle_links.pop(0)
+    logger.debug(f'Взята ссылка на задачу: {todo_puzzle_link}')
     async with get_parser_by_config(config) as parser:
+        logger.debug('Создан объект парсера')
         current_puzzle_details = await parser.parse_puzzle_details(todo_puzzle_link)
-    comment = (
-        f'Взято в работу:\n{current_puzzle_details}'
-    )
+    comment = (f'Взято в работу:\n{current_puzzle_details}')
+    logger.debug(comment)
     send_telegram_message_by_config(comment, config)
     return {
         'todo_puzzle_links': todo_puzzle_links,
@@ -105,14 +109,18 @@ async def download_input(state: AOCState, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход скачивания файла с входными данными')
     working_dir = Path(config['configurable'].get('working_dir', './tmp_work_dir')).resolve()
+    logger.debug(f'Рабочая директория: {working_dir}')
     working_dir.mkdir(parents=True, exist_ok=True)
+    logger.debug(f'Созданы все папки по пути {working_dir}')
     current_puzzle_details = state['current_puzzle_details']
+    logger.debug(f'Текущая задача: {current_puzzle_details}')
     input_filepath = working_dir / f'INPUT({current_puzzle_details.name}).txt'
+    logger.debug(f'Путь до файла {input_filepath}')
     async with get_parser_by_config(config) as parser:
+        logger.debug('Создан объект парсера')
         await parser.download_input(current_puzzle_details.input_link, input_filepath)
-    comment = (
-        f'Скачены входные данные в файл {input_filepath}'
-    )
+    comment = (f'Скачены входные данные в файл {input_filepath}')
+    logger.debug(comment)
     send_telegram_message_by_config(comment, config)
     return {'input_filepath': input_filepath, 'comment': comment}
 
@@ -123,8 +131,9 @@ async def write_code(state: AOCState, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход узла программиста')
     llm = get_model_by_config(config)
-
+    logger.debug(f'Создан объект LLM {llm}')
     messages = state.get('messages', [])
+    logger.debug(f'Количество сообщений в истории: {len(messages)}')
     if len(messages) == 0:
         tool_choice = PythonREPL.__name__
     else:
@@ -139,14 +148,17 @@ async def write_code(state: AOCState, config: RunnableConfig):
             'messages': messages
         }
     )
+    logger.debug(f'Результат вызова функции:\n{repr(result)[:100]}')
     messages.append(result)
 
     if result.tool_calls[0]['name'] == PythonREPL.__name__:
         code = result.tool_calls[0]['args']['query']
-        comment = f'Написан код:\n```python\n{code}\n```'
+        comment = f'Написан код:\n\n{code[:100]}\n...\n'
     else:
         answer = result.tool_calls[0]['args']['answer']
         comment = f'Дан финальный ответ на задачу: {answer}'
+    logger.debug(comment)
+    send_telegram_message_by_config(comment, config)
     return {'messages': messages, 'comment': comment}
 
 
@@ -162,9 +174,10 @@ async def exec_code(state: AOCState, config: RunnableConfig):
     tool_call = tool_calls[0]
     if tool_call['name'] != PythonREPL.__name__:
         raise ValueError(f'Вызывают не инструмент по исполнению кода {PythonREPL.__name__}.\n{tool_call}')
+    logger.debug('Получен код для запуска')
     try:
         code_output = run_python_code_with_timeout(tool_call['args']['query'], DEFAULT_TIMEOUT_EXEC_CODE).strip(' \n')
-    except TimeoutError:
+    except ExecTimeoutException:
         comment = f'Превышено время ожидания {DEFAULT_TIMEOUT_EXEC_CODE} секунд'
         state['messages'].append(
             ToolMessage(
@@ -176,6 +189,7 @@ async def exec_code(state: AOCState, config: RunnableConfig):
     else:
         state['messages'].append(ToolMessage(content=code_output, tool_call_id=tool_call['id']))
         comment = f'Результат выполнения кода: "{code_output}"'
+    logger.debug(comment)
     send_telegram_message_by_config(comment, config)
     return {"messages": state['messages'], 'comment': comment}
 
@@ -191,6 +205,7 @@ async def route_exec_code(state: AOCState, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход выбора следующего узла по запуску кода')
     tool_calls = state["messages"][-1].tool_calls
+    logger.debug(f'Вызовов инструментов: {tool_calls}')
     if len(tool_calls) == 1 and tool_calls[0]['name'] == PythonREPL.__name__:
         return EXEC_CODE_ROUTE_NAME
     return FIND_ANSWER_ROUTE_NAME
@@ -208,10 +223,12 @@ async def answer_submit(state: AOCState, config: RunnableConfig):
     all_tool_call_code = [tool_call for tool_call in all_tool_call if tool_call['name'] == PythonREPL.__name__]
     answers = [tool_call['args']['answer'].strip(' \n') for tool_call in all_tool_call_answer]
     submit_answer = answers.pop(-1)
+    logger.debug(f'Получен ответ для отправки: {submit_answer}')
 
     # Если такой ответ ранее был
     if submit_answer in answers:
         comment = f'Данный ответ уже ранее отвечался и был неверным'
+        logger.debug(comment)
         state['messages'].append(
             ToolMessage(
                 content=f'The answer is incorrect. You have already answered "{submit_answer}" before. '
@@ -224,16 +241,18 @@ async def answer_submit(state: AOCState, config: RunnableConfig):
 
     # Отправка ответа
     async with get_parser_by_config(config) as parser:
+        logger.debug('Создан объект парсера')
         result = await parser.submit_answer(
             state['current_puzzle_details'].submit_url,
             state['current_puzzle_details'].level,
             submit_answer
         )
-
+    logger.debug(f'Отправка ответа завершена. Результат: {result}')
     # Если ответ верный
     if result.is_correct:
         final_code = all_tool_call_code[-1]['args']['query']
         comment = f'Ответ "{submit_answer}" верный!\nКОД ДЛЯ РЕШЕНИЯ:\n```python\n{final_code}\n```'
+        logger.debug(comment)
         send_telegram_message_by_config(comment, config)
         return {'comment': comment}
 
@@ -246,6 +265,7 @@ async def answer_submit(state: AOCState, config: RunnableConfig):
             tool_call_id=all_tool_call_answer[-1]['id']
         )
     )
+    logger.debug(comment)
     send_telegram_message_by_config(comment, config)
     return {'messages': state['messages'], 'comment': comment}
 
@@ -273,6 +293,7 @@ async def route_check_rules_retry(state: AOCState, config: RunnableConfig):
                             if hasattr(message, 'tool_calls') and
                             len(message.tool_calls) == 1 and
                             message.tool_calls[0]['name'] == TaskAnswer.__name__]
+    logger.debug(f'Всего ответов: {len(all_tool_call_answer)}')
     if len(all_tool_call_answer) >= DEFAULT_ATTEMPT_COUNT:
         return MAX_ATTEMPT_NAME
     return RULES_PASSED_NAME
@@ -294,8 +315,9 @@ EMPTY_BACKLOG_NAME = 'Все задачи из пула выполнены'
 async def route_check_pull_backlog(state: AOCState, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход выбора следующего узла по проверки пула задач')
-
-    if len(state.get("todo_puzzle_links", [])) > 0:
+    todo_puzzle_links = state.get("todo_puzzle_links", [])
+    logger.debug(f'Всего задач для работы: {len(todo_puzzle_links)}')
+    if len(todo_puzzle_links) > 0:
         return HAVE_TASKS_NAME
     return EMPTY_BACKLOG_NAME
 
@@ -307,8 +329,9 @@ ANSWER_CORRECTNESS_ROUTE_NAME = 'Ответ верный!'
 async def route_answer_correctness(state: AOCState, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход выбора следующего узла по правильности ответа')
-
-    if isinstance(state['messages'][-1], ToolMessage):
+    last_message = state['messages'][-1]
+    logger.debug(f'Последнее сообщение: {last_message}')
+    if isinstance(last_message, ToolMessage):
         return RETRY_ROUTE_NAME
     return ANSWER_CORRECTNESS_ROUTE_NAME
 
@@ -318,7 +341,6 @@ async def end_alert(_, config: RunnableConfig):
     logger.debug('Вход узла оповещение о завершении работы')
     comment = f'Я закончить, начальника!\nВремя {datetime.now()}'
     send_telegram_message_by_config(comment, config)
-
     return {'comment': comment}
 
 end_alert.__name__ = 'Оповещение о конце работы 🏁'
