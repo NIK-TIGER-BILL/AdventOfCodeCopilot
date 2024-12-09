@@ -67,6 +67,19 @@ async def search_unsolved_puzzles(_, config: RunnableConfig):
 search_unsolved_puzzles.__name__ = 'Поиск нерешенных задач 🔎'
 
 
+GET_PUZZLE_ROUTE_NAME = 'Задачи для решения еще есть'
+ALL_DONE_ROUTE_NAME = 'Все задачи из TODO листа выполнены'
+
+
+async def route_have_puzzles(state: AOCState, config: RunnableConfig):
+    logger = get_logger_by_config(config)
+    logger.debug('Вход выбора следующего узла по парсингу задачи')
+    todo_puzzle_links = state.get("todo_puzzle_links", [])
+    if len(todo_puzzle_links) > 0:
+        return GET_PUZZLE_ROUTE_NAME
+    return ALL_DONE_ROUTE_NAME
+
+
 async def get_puzzle(state: AOCState, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход узла распознавания задачи и условий')
@@ -105,19 +118,6 @@ async def download_input(state: AOCState, config: RunnableConfig):
     return {'input_filepath': input_filepath, 'comment': comment}
 
 download_input.__name__ = 'Скачивание входных данных ⏳'
-
-
-GET_PUZZLE_ROUTE_NAME = 'Задачи для решения еще есть'
-ALL_DONE_ROUTE_NAME = 'Все задачи из TODO листа выполнены'
-
-
-async def route_have_puzzles(state: AOCState, config: RunnableConfig):
-    logger = get_logger_by_config(config)
-    logger.debug('Вход выбора следующего узла по парсингу задачи')
-    todo_puzzle_links = state.get("todo_puzzle_links", [])
-    if len(todo_puzzle_links) > 0:
-        return GET_PUZZLE_ROUTE_NAME
-    return ALL_DONE_ROUTE_NAME
 
 
 async def write_code(state: AOCState, config: RunnableConfig):
@@ -190,10 +190,12 @@ async def answer_submit(state: AOCState, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход узла отправки ответа')
 
-    all_tool_call_answer = [message.tool_calls[0] for message in state['messages']
+    all_tool_call = [message.tool_calls[0] for message in state['messages']
                             if hasattr(message, 'tool_calls') and
-                            len(message.tool_calls) == 1 and
-                            message.tool_calls[0]['name'] == TaskAnswer.__name__]
+                            len(message.tool_calls) == 1]
+
+    all_tool_call_answer = [tool_call for tool_call in all_tool_call if tool_call['name'] == TaskAnswer.__name__]
+    all_tool_call_code = [tool_call for tool_call in all_tool_call if tool_call['name'] == PythonREPL.__name__]
     answers = [tool_call['args']['answer'].strip(' \n') for tool_call in all_tool_call_answer]
     submit_answer = answers.pop(-1)
 
@@ -220,7 +222,8 @@ async def answer_submit(state: AOCState, config: RunnableConfig):
 
     # Если ответ верный
     if result.is_correct:
-        comment = f'Ответ "{submit_answer}" верный!\n{result.full_text}'
+        final_code = all_tool_call_code[-1]['args']['query']
+        comment = f'Ответ "{submit_answer}" верный!\nКОД ДЛЯ РЕШЕНИЯ:\n```python\n{final_code}\n```'
         send_telegram_message_by_config(comment, config)
         return {'comment': comment}
 
