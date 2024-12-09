@@ -5,16 +5,22 @@ developer_prompt = ChatPromptTemplate(
     [
         (
             'system',
-            'Ты программист на языке python, который решает много олимпиадных задач.'
+            'You are a world-class competitive programmer.\n'
+            'Please reply with a Python 3 solution to the problem below.\n'
+            'First, reason through the problem and conceptualize a solution.\n'
+            'Then write detailed pseudocode to uncover any potential logical errors or omissions.\n'
+            'Finally output the working Python code for your solution, ensuring to fix any errors uncovered while writing pseudocode.\n'
+            'Your code must print the answer using print(). There MUST be only one print. Typically, it outputs 1 number\n'
+            'No outside libraries are allowed'
         ),
         (
             'user',
-            'Напиши python код, который решит олимпиадную задачу.\n'
-            'Файл с входными данными input.txt лежит по пути: "{input_filepath}" используй его.\n\n'
-            '<task>\n'
+            'TASK_DESCRIPTION:'
+            '<task_description>\n'
             '{task_description}\n'
-            '</task>\n\n'
-            'Код который ты напишешь должен напечатать (используя print()) ответ на вопрос задачи: {question}\n\n'
+            '</task_description>\n\n'
+            'The input file is located at: "{input_filepath}" use it.\n\n'
+            'Answer the question: {question}\n\n'
         ),
         (
             'placeholder',
