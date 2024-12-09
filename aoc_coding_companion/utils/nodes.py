@@ -176,27 +176,43 @@ async def answer_submit(state: AOCState, config: RunnableConfig):
     logger = get_logger_by_config(config)
     logger.debug('Вход узла отправки ответа')
 
-    tool_call = state["messages"][-1].tool_calls[0]
-    answer = tool_call['args']['answer'].strip(' \n')
+    all_tool_call_answer = [message.tool_calls[0]['args']['answer'].strip(' \n')
+                            for message in state['messages'] if len(message.tool_calls) == 1 and
+                            message.tool_calls[0]['name'] == TaskAnswer.__name__]
+    answers = [tool_call['args']['answer'].strip(' \n') for tool_call in all_tool_call_answer]
+    submit_answer = answers.pop(-1)
 
-    print(state['current_puzzle_details'])
+    # Если такой ответ ранее был
+    if submit_answer in answers:
+        comment = f'Данный ответ уже ранее отвечался и был неверным'
+        state['messages'].append(
+            ToolMessage(
+                content=f'Ответ неправильный. Ты уже ранее отвечал "{submit_answer}". НЕ ПОВТОРЯЙСЯ',
+                tool_call_id=all_tool_call_answer[-1]['id']
+            )
+        )
+        return {'messages': state['messages'], 'comment': comment}
 
+    # Отправка ответа
     async with get_parser_by_config(config) as parser:
         result = await parser.submit_answer(
             state['current_puzzle_details'].submit_url,
             state['current_puzzle_details'].level,
-            answer
+            submit_answer
         )
 
+    # Если ответ верный
     if result.is_correct:
-        comment = f'Ответ "{answer}" верный!\n{result.full_text}'
+        comment = f'Ответ "{submit_answer}" верный!\n{result.full_text}'
         send_telegram_message_by_config(comment, config)
         return {'comment': comment}
-    comment = f'Ответ "{answer}" неверный!\n{result.full_text}'
+
+    # Если ответ неверный
+    comment = f'Ответ "{submit_answer}" неверный!\n{result.full_text}'
     state['messages'].append(
         ToolMessage(
             content='Ответ неверный. Где-то есть ошибка, еще раз прочитай условие и перепиши код',
-            tool_call_id=tool_call['id']
+            tool_call_id=all_tool_call_answer[-1]['id']
         )
     )
     send_telegram_message_by_config(comment, config)
